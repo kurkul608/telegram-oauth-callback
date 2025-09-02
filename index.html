@@ -159,7 +159,7 @@
         <div class="spinner" id="spinner"></div>
         <div class="title">Telegram OAuth</div>
         <div class="message" id="message">Обработка авторизации...</div>
-        <div class="submessage" id="submessage">Получаем данные от Telegram</div>
+        <div class="submessage" id="submessage">Анализируем данные от Telegram</div>
         
         <div class="debug-section">
             <div class="debug-title">🔧 Отладочная информация</div>
@@ -180,7 +180,7 @@
         
         <div id="params" style="display: none; margin-top: 20px;">
             <div class="debug-section">
-                <div class="debug-title">📋 Параметры Telegram</div>
+                <div class="debug-title">📋 Все найденные параметры</div>
                 <div id="paramsContent"></div>
             </div>
         </div>
@@ -218,7 +218,6 @@
                 log(`Попытка открыть приложение: ${deepLinkUrl}`, 'info');
                 window.location.href = deepLinkUrl;
                 
-                // Обновляем UI
                 setTimeout(() => {
                     updateUI('Приложение должно открыться', 'Если не открылось, попробуйте скопировать ссылку', false, true);
                 }, 1000);
@@ -233,7 +232,6 @@
                     log('Deep link скопирован в буфер обмена', 'success');
                     updateUI('Ссылка скопирована! 📋', 'Вставьте её в Safari или отправьте себе в сообщениях', false, true);
                 }).catch(() => {
-                    // Fallback для старых браузеров
                     const textArea = document.createElement('textarea');
                     textArea.value = deepLinkUrl;
                     document.body.appendChild(textArea);
@@ -255,13 +253,90 @@
                 button.textContent = '🙈 Скрыть параметры';
                 
                 const paramsContent = document.getElementById('paramsContent');
-                paramsContent.innerHTML = Object.keys(allParams).length > 0 
-                    ? Object.entries(allParams).map(([key, value]) => `<div><strong>${key}:</strong> ${value}</div>`).join('')
-                    : '<div class="error">Параметры не найдены</div>';
+                if (Object.keys(allParams).length > 0) {
+                    paramsContent.innerHTML = Object.entries(allParams).map(([key, value]) => 
+                        `<div><strong>${key}:</strong> ${value}</div>`
+                    ).join('');
+                } else {
+                    paramsContent.innerHTML = '<div class="error">❌ Параметры не найдены</div>';
+                }
             } else {
                 params.style.display = 'none';
                 button.textContent = '🔍 Показать параметры';
             }
+        }
+
+        // Функция для извлечения параметров из разных источников
+        function extractAllParams() {
+            const params = new URLSearchParams();
+            
+            // 1. Параметры из URL search (?param=value)
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.forEach((value, key) => {
+                params.set(key, value);
+                allParams[key] = value;
+                log(`URL Search: ${key} = ${value}`, 'success');
+            });
+            
+            // 2. Параметры из hash (#param=value)
+            const hashString = window.location.hash.substring(1);
+            if (hashString) {
+                log(`Hash string: ${hashString}`, 'info');
+                
+                // Пробуем парсить как URL параметры
+                try {
+                    const hashParams = new URLSearchParams(hashString);
+                    hashParams.forEach((value, key) => {
+                        params.set(key, value);
+                        allParams[key] = value;
+                        log(`Hash Params: ${key} = ${value}`, 'success');
+                    });
+                } catch (e) {
+                    log(`Не удалось парсить hash как URL параметры: ${e.message}`, 'warning');
+                }
+                
+                // Пробуем парсить как JSON
+                try {
+                    const hashJson = JSON.parse(decodeURIComponent(hashString));
+                    Object.entries(hashJson).forEach(([key, value]) => {
+                        params.set(key, String(value));
+                        allParams[key] = value;
+                        log(`Hash JSON: ${key} = ${value}`, 'success');
+                    });
+                } catch (e) {
+                    log(`Hash не является JSON: ${e.message}`, 'info');
+                }
+            }
+            
+            // 3. Проверяем document.referrer (откуда пришли)
+            if (document.referrer) {
+                log(`Referrer: ${document.referrer}`, 'info');
+                try {
+                    const referrerUrl = new URL(document.referrer);
+                    if (referrerUrl.hostname === 'oauth.telegram.org') {
+                        log('Пришли с Telegram OAuth!', 'success');
+                    }
+                } catch (e) {
+                    log(`Не удалось парсить referrer: ${e.message}`, 'warning');
+                }
+            }
+            
+            // 4. Проверяем localStorage/sessionStorage
+            try {
+                const stored = localStorage.getItem('telegram_oauth_data') || sessionStorage.getItem('telegram_oauth_data');
+                if (stored) {
+                    const storedData = JSON.parse(stored);
+                    Object.entries(storedData).forEach(([key, value]) => {
+                        params.set(key, String(value));
+                        allParams[key] = value;
+                        log(`Stored: ${key} = ${value}`, 'success');
+                    });
+                }
+            } catch (e) {
+                log(`Нет данных в storage: ${e.message}`, 'info');
+            }
+            
+            return params;
         }
 
         // Основная логика
@@ -270,29 +345,10 @@
             log(`Полный URL: ${window.location.href}`, 'info');
             log(`User Agent: ${navigator.userAgent}`, 'info');
             
-            // Получаем параметры из URL и hash
-            const urlParams = new URLSearchParams(window.location.search);
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            // Извлекаем все возможные параметры
+            const combinedParams = extractAllParams();
             
-            log(`Search параметры: ${window.location.search || 'отсутствуют'}`, 'info');
-            log(`Hash параметры: ${window.location.hash || 'отсутствуют'}`, 'info');
-            
-            // Собираем все параметры
-            const combinedParams = new URLSearchParams();
-            
-            // Добавляем параметры из search
-            urlParams.forEach((value, key) => {
-                combinedParams.set(key, value);
-                allParams[key] = value;
-                log(`Search: ${key} = ${value}`, 'success');
-            });
-            
-            // Добавляем параметры из hash  
-            hashParams.forEach((value, key) => {
-                combinedParams.set(key, value);
-                allParams[key] = value;
-                log(`Hash: ${key} = ${value}`, 'success');
-            });
+            log(`Всего найдено параметров: ${combinedParams.size}`, 'info');
             
             // Проверяем наличие обязательных параметров Telegram
             const hasId = combinedParams.has('id');
@@ -327,7 +383,7 @@
                 
             } else {
                 log('❌ ОШИБКА: Отсутствуют обязательные параметры авторизации', 'error');
-                updateUI('❌ Ошибка авторизации', 'Telegram не передал необходимые данные', false, true);
+                updateUI('❌ Ошибка авторизации', 'Telegram не передал необходимые данные (id, hash)', false, true);
                 
                 // Показываем подробности для отладки
                 if (Object.keys(allParams).length > 0) {
@@ -337,6 +393,10 @@
                     });
                 } else {
                     log('Параметры вообще не получены', 'error');
+                    log('Возможные причины:', 'warning');
+                    log('1. Telegram передает данные через POST запрос', 'info');
+                    log('2. Данные передаются в специальном формате', 'info');
+                    log('3. Проблема с настройками бота', 'info');
                 }
             }
             
