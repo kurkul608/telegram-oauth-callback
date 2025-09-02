@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram OAuth Callback</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 30px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .message {
+            font-size: 18px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .submessage {
+            font-size: 16px;
+            opacity: 0.7;
+            margin-bottom: 30px;
+        }
+        
+        .debug-section {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .debug-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+            color: #fff;
+        }
+        
+        .button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 10px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            min-width: 150px;
+        }
+        
+        .button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .button.primary {
+            background: rgba(76, 175, 80, 0.8);
+            border-color: rgba(76, 175, 80, 1);
+        }
+        
+        .button.primary:hover {
+            background: rgba(76, 175, 80, 1);
+        }
+        
+        .success {
+            color: #4CAF50;
+        }
+        
+        .error {
+            color: #f44336;
+        }
+        
+        .warning {
+            color: #FF9800;
+        }
+        
+        .info {
+            color: #2196F3;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 30px 20px;
+            }
+            
+            .title {
+                font-size: 24px;
+            }
+            
+            .button {
+                display: block;
+                margin: 10px 0;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <div class="title">Telegram OAuth</div>
+        <div class="message" id="message">Обработка авторизации...</div>
+        <div class="submessage" id="submessage">Получаем данные от Telegram</div>
+        
+        <div class="debug-section">
+            <div class="debug-title">🔧 Отладочная информация</div>
+            <div id="debug"></div>
+        </div>
+        
+        <div id="buttons" style="display: none;">
+            <a href="#" class="button primary" id="openApp" onclick="tryOpenApp()">
+                📱 Открыть приложение
+            </a>
+            <button class="button" id="copyLink" onclick="copyDeepLink()">
+                📋 Копировать ссылку
+            </button>
+            <button class="button" id="showParams" onclick="toggleParams()">
+                🔍 Показать параметры
+            </button>
+        </div>
+        
+        <div id="params" style="display: none; margin-top: 20px;">
+            <div class="debug-section">
+                <div class="debug-title">📋 Параметры Telegram</div>
+                <div id="paramsContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let deepLinkUrl = '';
+        let allParams = {};
+        
+        function log(message, type = 'info') {
+            const debug = document.getElementById('debug');
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            };
+            
+            const className = type === 'info' ? 'info' : type === 'success' ? 'success' : type === 'error' ? 'error' : 'warning';
+            debug.innerHTML += `<div class="${className}">${emoji[type]} [${timestamp}] ${message}</div>`;
+            debug.scrollTop = debug.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateUI(message, submessage, showSpinner = true, showButtons = false) {
+            document.getElementById('message').textContent = message;
+            document.getElementById('submessage').textContent = submessage;
+            document.getElementById('spinner').style.display = showSpinner ? 'block' : 'none';
+            document.getElementById('buttons').style.display = showButtons ? 'block' : 'none';
+        }
+
+        function tryOpenApp() {
+            if (deepLinkUrl) {
+                log(`Попытка открыть приложение: ${deepLinkUrl}`, 'info');
+                window.location.href = deepLinkUrl;
+                
+                // Обновляем UI
+                setTimeout(() => {
+                    updateUI('Приложение должно открыться', 'Если не открылось, попробуйте скопировать ссылку', false, true);
+                }, 1000);
+            } else {
+                log('Deep link не создан!', 'error');
+            }
+        }
+
+        function copyDeepLink() {
+            if (deepLinkUrl) {
+                navigator.clipboard.writeText(deepLinkUrl).then(() => {
+                    log('Deep link скопирован в буфер обмена', 'success');
+                    updateUI('Ссылка скопирована! 📋', 'Вставьте её в Safari или отправьте себе в сообщениях', false, true);
+                }).catch(() => {
+                    // Fallback для старых браузеров
+                    const textArea = document.createElement('textarea');
+                    textArea.value = deepLinkUrl;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    log('Deep link скопирован (fallback)', 'success');
+                    updateUI('Ссылка скопирована! 📋', 'Вставьте её в Safari или отправьте себе в сообщениях', false, true);
+                });
+            }
+        }
+
+        function toggleParams() {
+            const params = document.getElementById('params');
+            const button = document.getElementById('showParams');
+            
+            if (params.style.display === 'none') {
+                params.style.display = 'block';
+                button.textContent = '🙈 Скрыть параметры';
+                
+                const paramsContent = document.getElementById('paramsContent');
+                paramsContent.innerHTML = Object.keys(allParams).length > 0 
+                    ? Object.entries(allParams).map(([key, value]) => `<div><strong>${key}:</strong> ${value}</div>`).join('')
+                    : '<div class="error">Параметры не найдены</div>';
+            } else {
+                params.style.display = 'none';
+                button.textContent = '🔍 Показать параметры';
+            }
+        }
+
+        // Основная логика
+        try {
+            log('=== Telegram OAuth Callback Started ===', 'info');
+            log(`Полный URL: ${window.location.href}`, 'info');
+            log(`User Agent: ${navigator.userAgent}`, 'info');
+            
+            // Получаем параметры из URL и hash
+            const urlParams = new URLSearchParams(window.location.search);
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            
+            log(`Search параметры: ${window.location.search || 'отсутствуют'}`, 'info');
+            log(`Hash параметры: ${window.location.hash || 'отсутствуют'}`, 'info');
+            
+            // Собираем все параметры
+            const combinedParams = new URLSearchParams();
+            
+            // Добавляем параметры из search
+            urlParams.forEach((value, key) => {
+                combinedParams.set(key, value);
+                allParams[key] = value;
+                log(`Search: ${key} = ${value}`, 'success');
+            });
+            
+            // Добавляем параметры из hash  
+            hashParams.forEach((value, key) => {
+                combinedParams.set(key, value);
+                allParams[key] = value;
+                log(`Hash: ${key} = ${value}`, 'success');
+            });
+            
+            // Проверяем наличие обязательных параметров Telegram
+            const hasId = combinedParams.has('id');
+            const hasHash = combinedParams.has('hash');
+            const hasAuthDate = combinedParams.has('auth_date');
+            
+            log(`Telegram ID: ${hasId ? '✅' : '❌'}`, hasId ? 'success' : 'error');
+            log(`Telegram Hash: ${hasHash ? '✅' : '❌'}`, hasHash ? 'success' : 'error');
+            log(`Auth Date: ${hasAuthDate ? '✅' : '❌'}`, hasAuthDate ? 'success' : 'error');
+            
+            const hasValidAuthData = hasId && hasHash;
+            log(`Валидные данные авторизации: ${hasValidAuthData ? '✅' : '❌'}`, hasValidAuthData ? 'success' : 'error');
+            
+            if (hasValidAuthData) {
+                // Создаем deep link для приложения MasterMind
+                deepLinkUrl = `mastermind://auth/callback?${combinedParams.toString()}`;
+                log(`Deep link создан: ${deepLinkUrl}`, 'success');
+                
+                updateUI('✅ Авторизация успешна!', 'Открываем приложение MasterMind...', true, false);
+                
+                // Пытаемся автоматически открыть приложение
+                setTimeout(() => {
+                    log('Попытка автоматического открытия приложения...', 'info');
+                    window.location.href = deepLinkUrl;
+                    
+                    // Если через 4 секунды приложение не открылось, показываем кнопки
+                    setTimeout(() => {
+                        updateUI('📱 Откройте приложение MasterMind', 'Если приложение не открылось автоматически, используйте кнопки ниже', false, true);
+                        log('Показаны кнопки для ручного управления', 'warning');
+                    }, 4000);
+                }, 2000);
+                
+            } else {
+                log('❌ ОШИБКА: Отсутствуют обязательные параметры авторизации', 'error');
+                updateUI('❌ Ошибка авторизации', 'Telegram не передал необходимые данные', false, true);
+                
+                // Показываем подробности для отладки
+                if (Object.keys(allParams).length > 0) {
+                    log('Получены следующие параметры:', 'warning');
+                    Object.entries(allParams).forEach(([key, value]) => {
+                        log(`  ${key}: ${value}`, 'info');
+                    });
+                } else {
+                    log('Параметры вообще не получены', 'error');
+                }
+            }
+            
+        } catch (error) {
+            log(`💥 КРИТИЧЕСКАЯ ОШИБКА: ${error.message}`, 'error');
+            log(`Stack trace: ${error.stack}`, 'error');
+            updateUI('💥 Произошла ошибка', 'Проверьте отладочную информацию', false, true);
+        }
+        
+        // Дополнительная отладочная информация
+        log(`Платформа: ${navigator.platform}`, 'info');
+        log(`Язык: ${navigator.language}`, 'info');
+        log(`Время загрузки: ${new Date().toLocaleString()}`, 'info');
+        log('=== Инициализация завершена ===', 'info');
+    </script>
+</body>
+</html>
