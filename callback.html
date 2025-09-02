@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram OAuth Callback</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 30px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .message {
+            font-size: 18px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .submessage {
+            font-size: 16px;
+            opacity: 0.7;
+            margin-bottom: 30px;
+        }
+        
+        .debug-section {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .debug-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+            color: #fff;
+        }
+        
+        .button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            margin: 10px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            min-width: 150px;
+        }
+        
+        .button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .button.primary {
+            background: rgba(76, 175, 80, 0.8);
+            border-color: rgba(76, 175, 80, 1);
+        }
+        
+        .button.primary:hover {
+            background: rgba(76, 175, 80, 1);
+        }
+        
+        .success {
+            color: #4CAF50;
+        }
+        
+        .error {
+            color: #f44336;
+        }
+        
+        .warning {
+            color: #FF9800;
+        }
+        
+        .info {
+            color: #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <div class="title">🎉 Успешно!</div>
+        <div class="message" id="message">Авторизация через Telegram прошла успешно!</div>
+        <div class="submessage" id="submessage">Открываем приложение MasterMind...</div>
+        
+        <div class="debug-section">
+            <div class="debug-title">🔧 Отладочная информация</div>
+            <div id="debug"></div>
+        </div>
+        
+        <div id="buttons">
+            <a href="#" class="button primary" id="openApp" onclick="tryOpenApp()">
+                📱 Открыть приложение
+            </a>
+            <button class="button" id="copyLink" onclick="copyDeepLink()">
+                📋 Копировать ссылку
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let deepLinkUrl = '';
+        
+        function log(message, type = 'info') {
+            const debug = document.getElementById('debug');
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            };
+            
+            const className = type === 'info' ? 'info' : type === 'success' ? 'success' : type === 'error' ? 'error' : 'warning';
+            debug.innerHTML += `<div class="${className}">${emoji[type]} [${timestamp}] ${message}</div>`;
+            debug.scrollTop = debug.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function tryOpenApp() {
+            if (deepLinkUrl) {
+                log(`Попытка открыть приложение: ${deepLinkUrl}`, 'info');
+                window.location.href = deepLinkUrl;
+            } else {
+                log('Deep link не создан!', 'error');
+            }
+        }
+
+        function copyDeepLink() {
+            if (deepLinkUrl) {
+                navigator.clipboard.writeText(deepLinkUrl).then(() => {
+                    log('Deep link скопирован в буфер обмена', 'success');
+                    document.getElementById('message').textContent = 'Ссылка скопирована! 📋';
+                    document.getElementById('submessage').textContent = 'Вставьте её в Safari или отправьте себе в сообщениях';
+                }).catch(() => {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = deepLinkUrl;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    log('Deep link скопирован (fallback)', 'success');
+                });
+            }
+        }
+
+        // Основная логика
+        try {
+            log('=== Telegram OAuth Callback (callback.html) ===', 'success');
+            log(`Полный URL: ${window.location.href}`, 'info');
+            
+            // Получаем параметры из URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            
+            log(`Search параметры: ${window.location.search || 'отсутствуют'}`, 'info');
+            log(`Hash параметры: ${window.location.hash || 'отсутствуют'}`, 'info');
+            
+            // Собираем все параметры
+            const combinedParams = new URLSearchParams();
+            
+            // Добавляем параметры из search
+            urlParams.forEach((value, key) => {
+                if (key !== 'v') { // исключаем параметр версии
+                    combinedParams.set(key, value);
+                    log(`Search: ${key} = ${value}`, 'success');
+                }
+            });
+            
+            // Добавляем параметры из hash  
+            hashParams.forEach((value, key) => {
+                combinedParams.set(key, value);
+                log(`Hash: ${key} = ${value}`, 'success');
+            });
+            
+            // Проверяем наличие обязательных параметров Telegram
+            const hasId = combinedParams.has('id');
+            const hasHash = combinedParams.has('hash');
+            
+            log(`Telegram ID: ${hasId ? '✅' : '❌'}`, hasId ? 'success' : 'error');
+            log(`Telegram Hash: ${hasHash ? '✅' : '❌'}`, hasHash ? 'success' : 'error');
+            
+            // Создаем deep link в любом случае для тестирования
+            if (combinedParams.size > 0) {
+                deepLinkUrl = `mastermind://auth/callback?${combinedParams.toString()}`;
+            } else {
+                // Тестовые параметры если ничего не пришло
+                deepLinkUrl = `mastermind://auth/callback?test=true&timestamp=${Date.now()}`;
+            }
+            
+            log(`Deep link создан: ${deepLinkUrl}`, 'success');
+            
+            // Автоматическое открытие приложения
+            setTimeout(() => {
+                log('Попытка автоматического открытия приложения...', 'info');
+                window.location.href = deepLinkUrl;
+            }, 2000);
+            
+        } catch (error) {
+            log(`💥 ОШИБКА: ${error.message}`, 'error');
+        }
+        
+        log(`Платформа: ${navigator.platform}`, 'info');
+        log(`Время загрузки: ${new Date().toLocaleString()}`, 'info');
+        log('=== Callback.html загружен успешно ===', 'success');
+    </script>
+</body>
+</html>
